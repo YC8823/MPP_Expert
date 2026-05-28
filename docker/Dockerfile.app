@@ -1,4 +1,4 @@
-# Build stage
+﻿# Build stage
 FROM golang:1.24-bookworm AS builder
 
 WORKDIR /app
@@ -68,11 +68,11 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         nodejs npm \
         gosu \
         ffmpeg && \
-    python3 -m pip install --break-system-packages --upgrade pip setuptools wheel && \
+    python3 -m pip install --break-system-packages -i https://pypi.tuna.tsinghua.edu.cn/simple --upgrade pip setuptools wheel uv && \
     mkdir -p /home/appuser/.local/bin && \
-    curl -LsSf https://astral.sh/uv/install.sh | CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh && \
+    ln -sf /usr/local/bin/uv /home/appuser/.local/bin/uv && \
+    ln -sf /usr/local/bin/uvx /home/appuser/.local/bin/uvx && \
     chown -R appuser:appuser /home/appuser && \
-    ln -sf /home/appuser/.local/bin/uvx /usr/local/bin/uvx && \
     chmod +x /usr/local/bin/uvx && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
