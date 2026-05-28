@@ -1,0 +1,214 @@
+# 开发环境配置 - 只启动基础设施服务，app 和 frontend 在本地运行
+services:
+  # 只启动依赖的基础设施服务
+  postgres:
+    image: paradedb/paradedb:v0.22.2-pg17
+    container_name: WeKnora-postgres-dev
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+    volumes:
+      - postgres-data-dev:/var/lib/postgresql/data
+    networks:
+      - WeKnora-network-dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 1m
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: WeKnora-redis-dev
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data_dev:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    restart: always
+    networks:
+      - WeKnora-network-dev
+
+  minio:
+    image: minio/minio:latest
+    container_name: WeKnora-minio-dev
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY_ID:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_ACCESS_KEY:-minioadmin}
+    command: server --console-address ":9001" /data
+    volumes:
+      - minio_data_dev:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - WeKnora-network-dev
+    profiles:
+      - minio
+      - full
+
+  qdrant:
+    image: qdrant/qdrant:v1.16.2
+    container_name: WeKnora-qdrant-dev
+    ports:
+      - "${QDRANT_REST_PORT:-6333}:6333"
+      - "${QDRANT_PORT:-6334}:6334"
+    volumes:
+      - qdrant_data_dev:/qdrant/storage
+    networks:
+      - WeKnora-network-dev
+    restart: unless-stopped
+    profiles:
+      - qdrant
+      - full
+
+  milvus:
+    image: milvusdb/milvus:v2.6.11
+    container_name: WeKnora-milvus-dev
+    security_opt:
+      - seccomp:unconfined
+    command: ["milvus", "run", "standalone"]
+    environment:
+      - ETCD_USE_EMBED=true
+      - ETCD_DATA_DIR=/var/lib/milvus/etcd
+      - COMMON_STORAGETYPE=local
+      - DEPLOY_MODE=STANDALONE
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "${MILVUS_PORT:-19530}:19530"
+      - "${MILVUS_HEALTH_PORT:-9091}:9091"
+    volumes:
+      - milvus_data_dev:/var/lib/milvus
+    networks:
+      - WeKnora-network-dev
+    restart: unless-stopped
+    profiles:
+      - milvus
+      - full
+
+  neo4j:
+    image: neo4j:latest
+    container_name: WeKnora-neo4j-dev
+    volumes:
+      - neo4j-data-dev:/data
+    environment:
+      - NEO4J_AUTH=${NEO4J_USERNAME:-neo4j}/${NEO4J_PASSWORD:-password}
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_apoc_import_file_use__neo4j__config=true
+      - NEO4JLABS_PLUGINS=["apoc"]
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    restart: always
+    networks:
+      - WeKnora-network-dev
+    profiles:
+      - neo4j
+      - full
+
+  # Sandbox 镜像：仅用于 build/pull，非常驻服务；本地 app 执行 Skills 时按需 docker run 该镜像，用毕即释
+  sandbox:
+    image: wechatopenai/weknora-sandbox:${WEKNORA_VERSION:-latest}
+    container_name: WeKnora-sandbox-dev
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.sandbox
+    profiles:
+      - full
+    command: ["true"]
+    restart: "no"
+
+  docreader:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.docreader
+    image: wechatopenai/weknora-docreader:${WEKNORA_VERSION:-latest}
+    container_name: WeKnora-docreader-dev
+    ports:
+      - "${DOCREADER_PORT:-50051}:50051"
+    volumes:
+      - docreader-tmp-dev:/tmp/docreader
+    environment:
+      - DOCREADER_IMAGE_OUTPUT_DIR=/tmp/docreader
+      - MINERU_ENDPOINT=${MINERU_ENDPOINT:-}
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-}
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - WeKnora-network-dev
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: WeKnora-jaeger-dev
+    ports:
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+      - "14250:14250"
+      - "14268:14268"
+      - "9411:9411"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+    volumes:
+      - jaeger_data_dev:/var/lib/jaeger
+    networks:
+      - WeKnora-network-dev
+    restart: unless-stopped
+    profiles:
+      - jaeger
+      - full
+
+  dex:
+    image: dexidp/dex:latest
+    container_name: WeKnora-dex-dev
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./misc/dex-config.yaml:/etc/dex/config.yaml
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    profiles:
+      - dex
+      - full
+
+
+networks:
+  WeKnora-network-dev:
+    driver: bridge
+
+volumes:
+  postgres-data-dev:
+  redis_data_dev:
+  minio_data_dev:
+  neo4j-data-dev:
+  jaeger_data_dev:
+  qdrant_data_dev:
+  milvus_data_dev:
+  docreader-tmp-dev:
