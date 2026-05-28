@@ -242,6 +242,7 @@ const (
 	CHAT_COMPLETION        EventType = "chat_completion"
 	CHAT_COMPLETION_STREAM EventType = "chat_completion_stream"
 	FILTER_TOP_K           EventType = "filter_top_k"
+	VISION_AUGMENT         EventType = "vision_augment"
 	MEMORY_RETRIEVAL       EventType = "memory_retrieval"
 	MEMORY_STORAGE         EventType = "memory_storage"
 )

@@ -179,6 +179,7 @@ func (s *sessionService) KnowledgeQA(
 			Add(types.CHUNK_MERGE).
 			Add(types.FILTER_TOP_K).
 			Add(types.DATA_ANALYSIS).
+			Add(types.VISION_AUGMENT).
 			Add(types.INTO_CHAT_MESSAGE).
 			Add(types.CHAT_COMPLETION_STREAM).
 			Build()
